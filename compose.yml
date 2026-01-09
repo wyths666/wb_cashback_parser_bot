@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    restart: unless-stopped
+    expose:
+      - "27017"
+    volumes:
+      - mongodb_data:/data/db
+
+
+  bot:
+    build:
+      context: .
+      dockerfile: service.dockerfile
+    command: python -u main.py
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/db
+
+
+
+volumes:
+  mongodb_data:
