@@ -20,6 +20,7 @@ class Scheduler:
         self.scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
         self.parser_lock = asyncio.Lock()
         self.publish_lock = asyncio.Lock()
+        self.free_publish_lock = asyncio.Lock()
 
     def setup(self):
         # 09:00 — публикация
@@ -30,6 +31,13 @@ class Scheduler:
             replace_existing=True,
         )
 
+        # 09:15 - публикации в бесплатный канал
+        self.scheduler.add_job(
+            self.free_publish,
+            CronTrigger(hour=19, minute=48),
+            id="free_publish",
+            replace_existing=True,
+        )
         # Контроль доступа
         self.scheduler.add_job(
             self.validate_channel_access,
@@ -63,6 +71,13 @@ class Scheduler:
             service = PublishService(self.bot)
             await service.run()
 
+    async def free_publish(self):
+        logger.info("⏳ free_publish ждёт lock")
+        async with self.free_publish_lock:
+            logger.info("СТАРТ БЕСПЛАТНЫХ ПУКЛИКАЦИЙ")
+            from bot.free_publications import FreePublishService
+            service = FreePublishService(self.bot)
+            await service.run()
 
     async def validate_channel_access(self):
         logger.info("🔐 Запуск проверки доступа к каналу")

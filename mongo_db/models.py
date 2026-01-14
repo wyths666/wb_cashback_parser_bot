@@ -36,7 +36,9 @@ class WBProductFiltered(Document):
     published: bool = False
     published_at: Optional[datetime] = None
     telegram_message_ids: Optional[List[int]] = None
-
+    published_free: Optional[bool] = None
+    published_free_at: Optional[datetime] = None
+    published_free_message_ids: Optional[List[int]] = None
     # фото
     photos_parsed: bool = False
     photos: List[str] = []
@@ -67,6 +69,7 @@ class WBProductFiltered(Document):
             ),
             "category_id",
             "published",
+            "published_free",
             "source_hash",
             "photos_parsed",
             "reserved_for_photos",
