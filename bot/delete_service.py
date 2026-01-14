@@ -2,10 +2,14 @@ import asyncio
 import os
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict
+
+from aiogram.exceptions import TelegramRetryAfter
+
 from core.logger import bot_logger
-from mongo_db.models import WBProductFiltered
+from mongo_db.models import WBProductFiltered, WBProductRaw
 import dotenv
 
+from parser.cashback_validation import get_nm_ids_to_delete
 
 dotenv.load_dotenv()
 logger = bot_logger
@@ -36,18 +40,27 @@ class DeleteService:
                     chat_id=CHANNEL_ID,
                     message_id=message_id,
                 )
-            except Exception:
-                logger.exception(
-                    f"❌ Ошибка удаления message_id={message_id}"
-                )
+                await asyncio.sleep(0.2)
 
-        await product.set(
-            {
-                "published": False,
-                "published_at": None,
-                "telegram_message_ids": None,
-            }
-        )
+            except TelegramRetryAfter as e:
+                logger.warning(f"⏳ Flood limit, sleep {e.retry_after}s")
+                await asyncio.sleep(e.retry_after)
+
+            except Exception:
+                logger.exception("❌ Ошибка удаления сообщения")
+
+        try:
+            await product.delete()
+            raw = await WBProductRaw.find_one(
+                WBProductRaw.nm_id == product.nm_id
+            )
+            if raw:
+                await raw.delete()
+        except Exception as e:
+            logger.error(
+                f"❌ Ошибка удаления из базы данных - {str(e)}"
+            )
+
 
         logger.info(f"🗑 Удалён nm_id={product.nm_id}")
 
@@ -59,3 +72,9 @@ class DeleteService:
             return
 
         await self.delete_product(product)
+
+    async def run(self):
+        nm_ids = await get_nm_ids_to_delete()
+
+        for nm_id in nm_ids:
+            await self.delete_by_nm_id(nm_id)

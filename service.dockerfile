@@ -37,5 +37,3 @@ RUN pip install --upgrade pip && \
 RUN playwright install --with-deps chromium
 
 COPY . .
-
-CMD ["python", "main.py"]

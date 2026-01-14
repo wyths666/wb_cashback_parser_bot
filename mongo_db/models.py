@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, UTC
 
 from pydantic import Field
+from pymongo import IndexModel
 
 
 class WBProductRaw(Document):
@@ -59,7 +60,11 @@ class WBProductFiltered(Document):
     class Settings:
         name = "wb_products_filtered"
         indexes = [
-            "nm_id",
+            IndexModel(
+                [("nm_id", 1)],
+                unique=True,
+                name="nm_id_1",
+            ),
             "category_id",
             "published",
             "source_hash",

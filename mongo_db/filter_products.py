@@ -57,12 +57,6 @@ async def filter_products(
     min_percent: float = 0.30,
     allow_likely_fbo: bool = True
 ):
-    """
-    Фильтрует raw-товары в filtered.
-    Повторно обрабатывает ТОЛЬКО те товары,
-    у которых изменились значимые данные.
-    """
-
     raw_products = await WBProductRaw.find_all().to_list()
 
     passed = 0
@@ -71,90 +65,81 @@ async def filter_products(
 
     for doc in raw_products:
         product = doc.data
-
-        # 1️⃣ считаем hash текущих raw-данных
         data_hash = calc_data_hash(product)
 
-        # 2️⃣ проверяем, есть ли уже filtered
         filtered_existing = await WBProductFiltered.find_one(
             WBProductFiltered.nm_id == doc.nm_id
         )
 
+        # 🔒 1. ОПУБЛИКОВАННЫЕ НЕ ТРОГАЕМ ВООБЩЕ
+        if filtered_existing and filtered_existing.published:
+            skipped_unchanged += 1
+            continue
+
+        # 🔁 2. Если есть и hash не изменился — пропускаем
         if filtered_existing and filtered_existing.source_hash == data_hash:
             skipped_unchanged += 1
             continue
 
-        # 3️⃣ считаем cashback %
+        # 3️⃣ cashback %
         percent = calc_cashback_percent(product)
         if percent < min_percent:
-            # если раньше был filtered — обновим hash, чтобы не дергать снова
             if filtered_existing:
-                await filtered_existing.set(
-                    {
-                        "source_hash": data_hash,
-                        "filtered_at": datetime.now(UTC),
-                    }
-                )
+                await filtered_existing.set({
+                    "source_hash": data_hash,
+                    "filtered_at": datetime.now(UTC),
+                })
             continue
 
-        # 4️⃣ определяем fulfillment
+        # 4️⃣ fulfillment
         fulfillment, score = detect_fulfillment(product)
 
-        if fulfillment == "FBS":
+        if fulfillment == "FBS" or (
+            fulfillment == "LIKELY_FBO" and not allow_likely_fbo
+        ):
             skipped_fbs += 1
             if filtered_existing:
-                await filtered_existing.set(
-                    {
-                        "source_hash": data_hash,
-                        "filtered_at": datetime.now(UTC),
-                    }
-                )
+                await filtered_existing.set({
+                    "source_hash": data_hash,
+                    "filtered_at": datetime.now(UTC),
+                })
             continue
 
-        if fulfillment == "LIKELY_FBO" and not allow_likely_fbo:
-            skipped_fbs += 1
-            if filtered_existing:
-                await filtered_existing.set(
-                    {
-                        "source_hash": data_hash,
-                        "filtered_at": datetime.now(UTC),
-                    }
-                )
-            continue
-
-        # 5️⃣ считаем минимальную цену
+        # 5️⃣ цена
         prices = [
             size["price"]["product"]
             for size in product.get("sizes", [])
             if size.get("price", {}).get("product", 0) > 0
         ]
-
         if not prices:
             continue
 
         min_price_rub = min(prices) / 100
         cashback = product.get("feedbackPoints", 0)
 
-        filtered_doc = WBProductFiltered(
-            nm_id=doc.nm_id,
-            cashback_percent=round(percent, 4),
-            price=min_price_rub,
-            cashback=cashback,
-            category_id=doc.category_id,
-            fulfillment=fulfillment,
-            fulfillment_score=score,
-            data=product,
-            source_hash=data_hash,
-            filtered_at=datetime.now(UTC),
-        )
+        update_data = {
+            "cashback_percent": round(percent, 4),
+            "price": min_price_rub,
+            "cashback": cashback,
+            "category_id": doc.category_id,
+            "fulfillment": fulfillment,
+            "fulfillment_score": score,
+            "data": product,
+            "source_hash": data_hash,
+            "filtered_at": datetime.now(UTC),
+        }
 
-        # 6️⃣ upsert
-        await WBProductFiltered.find_one(
-            WBProductFiltered.nm_id == filtered_doc.nm_id
-        ).upsert(
-            {"$set": filtered_doc.dict()},
-            on_insert=filtered_doc,
-        )
+        # ✅ 6. UPDATE или INSERT (БЕЗ UPSERT)
+        if filtered_existing:
+            await filtered_existing.set(update_data)
+        else:
+            await WBProductFiltered(
+                nm_id=doc.nm_id,
+                **update_data,
+                published=False,
+                published_at=None,
+                telegram_message_ids=None,
+            ).insert()
 
         passed += 1
 
@@ -165,6 +150,7 @@ async def filter_products(
         f"без изменений: {skipped_unchanged}, "
         f"batch: {len(raw_products)}"
     )
+
 
 
 

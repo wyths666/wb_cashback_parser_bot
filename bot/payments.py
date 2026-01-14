@@ -1,3 +1,5 @@
+import json
+
 from aiogram import Router, F
 from aiogram.types import Message, LabeledPrice, InlineKeyboardMarkup
 from aiogram.filters import Command
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Получаем цену и конвертируем в копейки
 try:
-    price_str = os.getenv("PRICE_RUB", "100")
+    price_str = os.getenv("PRICE_RUB", "149")
     PRICE_RUB = int(price_str)
     PRICE_IN_KOPECKS = PRICE_RUB * 100
 except ValueError as e:
@@ -59,19 +61,39 @@ async def buy(message: Message):
         await message.answer(desc)
         await message.answer_invoice(
             title="Доступ к приватному каналу",
-            description=f"🔒 Подписка: 149 ₽ / месяц",
+            description="🔒 Подписка: 149 ₽ / месяц",
             payload=f"access:{message.from_user.id}",
             provider_token=PROVIDER_TOKEN,
             currency="RUB",
             prices=[price],
             start_parameter="buy-access",
+
+            need_email=True,
+            send_email_to_provider=True,
+
+            provider_data=json.dumps({
+                "receipt": {
+                    "items": [
+                        {
+                            "description": "Подписка на закрытый Telegram-канал (1 месяц)",
+                            "quantity": 1,
+                            "amount": {
+                                "value": f"{PRICE_RUB}.00",  # ← ВАЖНО
+                                "currency": "RUB"
+                            },
+                            "vat_code": 1,
+                            "payment_mode": "full_payment",
+                            "payment_subject": "service"
+                        }
+                    ],
+                    "tax_system_code": 2
+                }
+            }),
+
             need_name=False,
             need_phone_number=False,
-            need_email=False,
             need_shipping_address=False,
             is_flexible=False,
-            disable_notification=False,
-            protect_content=False,
         )
 
         logger.info(f"Инвойс создан для пользователя {message.from_user.id}")
