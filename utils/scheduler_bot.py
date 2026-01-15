@@ -26,7 +26,7 @@ class Scheduler:
         # 09:00 — публикация
         self.scheduler.add_job(
             self.publish,
-            CronTrigger(hour=9, minute=0),
+            CronTrigger(hour=22, minute=36),
             id="publish",
             replace_existing=True,
         )
@@ -34,7 +34,7 @@ class Scheduler:
         # 09:15 - публикации в бесплатный канал
         self.scheduler.add_job(
             self.free_publish,
-            CronTrigger(hour=19, minute=48),
+            CronTrigger(hour=9, minute=15),
             id="free_publish",
             replace_existing=True,
         )
@@ -54,6 +54,27 @@ class Scheduler:
             replace_existing=True,
         )
 
+        self.scheduler.add_job(
+            self.delete_product,
+            CronTrigger(hour=14, minute=0),
+            id="delete_product",
+            replace_existing=True,
+        )
+
+        self.scheduler.add_job(
+            self.delete_product,
+            CronTrigger(hour=18, minute=0),
+            id="delete_product",
+            replace_existing=True,
+        )
+
+        # Удаление неопубликованных товаров без кэшбэка
+        self.scheduler.add_job(
+            self.delete_product_unpublished,
+            CronTrigger(hour=8, minute=0),
+            id="delete_product",
+            replace_existing=True,
+        )
 
 
     async def start(self):
@@ -163,3 +184,11 @@ class Scheduler:
             from bot.delete_service import DeleteService
             service = DeleteService(self.bot)
             await service.run()
+
+    async def delete_product_unpublished(self):
+        logger.info("⏳ delete_product_unpublished ждёт lock")
+        async with self.parser_lock:
+            logger.info("🚀 Запуск проверки неопубликованных")
+            from bot.delete_service import DeleteService
+            service = DeleteService(self.bot)
+            await service.run_delete_unpublished()

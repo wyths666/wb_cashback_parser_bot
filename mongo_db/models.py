@@ -75,6 +75,16 @@ class WBProductFiltered(Document):
             "reserved_for_photos",
             [("category_id", 1), ("photos_parsed", 1), ("published", 1)],
             [("reserved_for_photos", 1), ("reserved_for_photos_at", 1)],
+            IndexModel(
+                [
+                    ("category_id", 1),
+                    ("published", 1),
+                    ("photos_parsed", 1),
+                    ("filtered_at", -1),
+                    ("cashback_percent", -1),
+                ],
+                name="publish_pool_sort_idx",
+            )
         ]
 
 class User(Document):

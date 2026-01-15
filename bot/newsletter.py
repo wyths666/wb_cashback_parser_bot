@@ -200,7 +200,12 @@ async def build_publish_pool(
                 "photos_parsed": True,
                 "nm_id": {"$nin": list(used_nm_ids)},
             }
-        ).sort("-cashback_percent").first_or_none()
+        ).sort(
+            [
+                ("filtered_at", -1),  # СНАЧАЛА свежесть
+                ("cashback_percent", -1),  # ПОТОМ процент
+            ]
+        ).first_or_none()
 
         if not product:
             continue
@@ -347,7 +352,7 @@ class PublishService:
         for product in publish_pool:
             await publish_product_album(self.bot, product)
             total += 1
-            next_time = datetime.now(UTC) + timedelta(seconds=delay)
+            next_time = datetime.now() + timedelta(seconds=delay)
             logger.info(f"⏭ Следующий пост в {next_time:%H:%M:%S}")
             await asyncio.sleep(delay)
 

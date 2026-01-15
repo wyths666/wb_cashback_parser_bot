@@ -133,6 +133,23 @@ async def get_nm_ids():
     nm_ids = [doc.nm_id for doc in docs]
     return nm_ids
 
+async def get_nm_ids_unpublished():
+    docs = await WBProductFiltered.find(
+        WBProductFiltered.published == False
+    ).project(NmOnly).to_list()
+
+    nm_ids = [doc.nm_id for doc in docs]
+    return nm_ids
+
+async def get_nm_ids_to_delete_unpublished():
+    nm_ids = await get_nm_ids_unpublished()
+    results, blocked, unknown = await main(nm_ids)
+
+    logger.info(f"✅ cashback confirmed: {len(set(results))}")
+    logger.warning(f"🚫 blocked (498): {len(set(blocked))}")
+    logger.warning(f"❌ to delete: {len(set(unknown))}")
+
+    return unknown
 
 async def entrypoint():
     await init_database()

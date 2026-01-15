@@ -38,20 +38,14 @@ class Scheduler:
             replace_existing=True,
         )
 
-        # 17:00 — парсер товаров
+        # 23:00 — парсер товаров
         self.scheduler.add_job(
             self.parse_raw_products,
-            CronTrigger(hour=17, minute=0),
+            CronTrigger(hour=23, minute=0),
             id="raw",
             replace_existing=True,
         )
-        # 5:00 - валидация / удаление
-        # self.scheduler.add_job(
-        #     self.validate_published_online,
-        #     CronTrigger(hour=13, minute=11),
-        #     id="validate_online",
-        #     replace_existing=True,
-        # )
+
 
     async def start(self):
         self.scheduler.start()
