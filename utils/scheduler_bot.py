@@ -26,7 +26,7 @@ class Scheduler:
         # 09:00 — публикация
         self.scheduler.add_job(
             self.publish,
-            CronTrigger(hour=22, minute=36),
+            CronTrigger(hour=9, minute=0),
             id="publish",
             replace_existing=True,
         )
@@ -49,21 +49,7 @@ class Scheduler:
         # Удаление товаров без кэшбэка
         self.scheduler.add_job(
             self.delete_product,
-            CronTrigger(hour=2, minute=0),
-            id="delete_product",
-            replace_existing=True,
-        )
-
-        self.scheduler.add_job(
-            self.delete_product,
-            CronTrigger(hour=14, minute=0),
-            id="delete_product",
-            replace_existing=True,
-        )
-
-        self.scheduler.add_job(
-            self.delete_product,
-            CronTrigger(hour=18, minute=0),
+            CronTrigger(hour="8,14,18,22", minute=30),
             id="delete_product",
             replace_existing=True,
         )
@@ -72,7 +58,7 @@ class Scheduler:
         self.scheduler.add_job(
             self.delete_product_unpublished,
             CronTrigger(hour=8, minute=0),
-            id="delete_product",
+            id="delete_product_unpublished",
             replace_existing=True,
         )
 

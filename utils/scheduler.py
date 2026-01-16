@@ -22,26 +22,26 @@ class Scheduler:
         self.publish_lock = asyncio.Lock()
 
     def setup(self):
-        # 10:00 — фильтрация
+        # 06:00 — фильтрация
         self.scheduler.add_job(
             self.filter_products,
-            CronTrigger(hour=10, minute=0),
+            CronTrigger(hour=6, minute=0),
             id="filter",
             replace_existing=True,
         )
 
-        # 12:00 — парсер фото
+        # 06:20 — парсер фото
         self.scheduler.add_job(
             self.parse_photos,
-            CronTrigger(hour=12, minute=0),
+            CronTrigger(hour=6, minute=20),
             id="photos",
             replace_existing=True,
         )
 
-        # 23:00 — парсер товаров
+        # 23:50 — парсер товаров
         self.scheduler.add_job(
             self.parse_raw_products,
-            CronTrigger(hour=23, minute=0),
+            CronTrigger(hour=23, minute=50),
             id="raw",
             replace_existing=True,
         )
@@ -77,13 +77,6 @@ class Scheduler:
 
             await run_raw_parser()
 
-    async def validate_published_online(self):
-        async with self.parser_lock:
-            from parser.validate_published import (
-                ValidatePublishedOnlineService
-            )
 
-            service = ValidatePublishedOnlineService(self.bot)
-            await service.run()
 
 
