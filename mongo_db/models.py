@@ -20,8 +20,169 @@ class WBProductRaw(Document):
     class Settings:
         name = "wb_products_raw"
         indexes = [
-            "nm_id"
+            "nm_id",
+            "data.reviewRating",
+            "data.feedbacks"
         ]
+
+class OzonProductRaw(Document):
+    sku: str
+    title: str
+    original_price: Optional[int] = None
+    price: int
+    discount: Optional[str] = None
+    rating: Optional[float] = None
+    reviews: Optional[int] = None
+    brand: Optional[str] = None
+    stock: Optional[int] = None
+    images: List[str] = Field(default_factory=list)
+    url: str
+    category: str
+    parent_category: str
+    review_points: Optional[int] = None
+
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    def set_created_at(self):
+        self.fetched_at = datetime.now(UTC)
+
+    class Settings:
+        name = "ozon_products_raw"
+        indexes = [
+            IndexModel([("sku", 1)], unique=True),
+            "price",
+            "original_price",
+            "review_points"
+        ]
+
+class OzonProductFiltered(Document):
+    sku: str
+    title: str
+    original_price: Optional[int] = None
+    price: int
+    discount: Optional[str] = None
+    rating: Optional[float] = None
+    reviews: Optional[int] = None
+    brand: Optional[str] = None
+    stock: Optional[int] = None
+    images: List[str] = Field(default_factory=list)
+    url: str
+    category: str
+    parent_category: str
+    review_points: Optional[int] = None
+
+    published: bool = False
+    published_at: Optional[datetime] = None
+    telegram_message_ids: Optional[list[int]] = None
+
+    filtered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    def set_filtered_at(self):
+        self.filtered_at = datetime.now(UTC)
+
+    class Settings:
+        name = "ozon_products_filtered"
+        indexes = [
+            IndexModel([("sku", 1)], unique=True),
+            "price",
+            "original_price",
+            "review_points",
+            "published",
+            "filtered_at"
+        ]
+
+
+class OzonProductFilteredWithPoints(Document):
+    sku: str
+    title: str
+    original_price: Optional[int] = None
+    price: int
+    discount: Optional[str] = None
+    rating: Optional[float] = None
+    reviews: Optional[int] = None
+    brand: Optional[str] = None
+    stock: Optional[int] = None
+    images: List[str] = Field(default_factory=list)
+    url: str
+    category: str
+    parent_category: str
+    review_points: Optional[int] = None
+
+    published: bool = False
+    published_at: Optional[datetime] = None
+    telegram_message_ids: Optional[list[int]] = None
+
+    filtered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    def set_filtered_at(self):
+        self.filtered_at = datetime.now(UTC)
+
+    class Settings:
+        name = "ozon_products_filtered_withs_points"
+        indexes = [
+            IndexModel([("sku", 1)], unique=True),
+            "price",
+            "original_price",
+            "review_points",
+            "published",
+            "filtered_at"
+        ]
+
+
+class WBProductDiscount(Document):
+
+    nm_id: int
+    category_id: str
+
+    price: float
+    basic_price: float
+    discount_percent: float
+
+    rating: float
+    feedbacks: int
+
+    data: Dict[str, Any]
+
+    source_hash: Optional[str] = None
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    photos_parsed: bool = False
+    photos: List[str] = []
+
+    reserved_for_photos: bool = False
+    reserved_for_photos_at: Optional[datetime] = None
+
+    published: bool = False
+    published_at: Optional[datetime] = None
+    telegram_message_ids: Optional[list[int]] = None
+
+    class Settings:
+        name = "wb_products_discount"
+
+        indexes = [
+            "nm_id",
+            "discount_percent",
+            "price",
+            "rating"
+        ]
+
+
+class ParserSettings(Document):
+    key: str
+    category_index: int = 0
+    chat_category_index: int = 0
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    chat_updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    class Settings:
+        name = "parser_settings"
+        indexes = ["key"]
+
 
 class WBProductFiltered(Document):
     nm_id: int
@@ -125,4 +286,4 @@ class Payment(Document):
         ]
 
 def get_document_models():
-    return [WBProductRaw, WBProductFiltered, User, Payment]
+    return [WBProductRaw, WBProductFiltered, User, Payment, WBProductDiscount, ParserSettings, OzonProductRaw, OzonProductFilteredWithPoints, OzonProductFiltered]

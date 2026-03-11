@@ -7,7 +7,9 @@ from typing import Dict, List
 from datetime import datetime, timezone, timedelta
 from aiogram.types import InputMediaPhoto
 from bot.newsletter import PUBLISH_WINDOW_SECONDS
+from core.bot import bot
 from core.logger import bot_logger
+from core.mongo import init_database
 from mongo_db.models import WBProductFiltered
 
 dotenv.load_dotenv()
@@ -93,8 +95,9 @@ async def build_free_publish_pool(
 
 def build_free_caption(product: WBProductFiltered) -> str:
     name = html.escape(product.data.get("name", ""))
+    basic_price = round(product.data["sizes"][0]["price"]["basic"] / 100)
     price = round(product.price)
-    cashback = round(product.cashback_percent * 100)
+    cashback = round(product.cashback)
     rating = product.data.get("reviewRating")
     fbc_cnt = product.data.get("feedbacks")
     nm_id = product.nm_id
@@ -102,14 +105,14 @@ def build_free_caption(product: WBProductFiltered) -> str:
     url = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
 
     return (
-        f"🟠 <b>{name}</b>\n"
-        f"⭐ {rating} · {fbc_cnt} оценок\n"
-        f"💰 <b>Цена:</b> {price}₽\n"
-        f"🔥 <b>Рубли за отзыв:</b> {cashback}%\n\n"
-        f"📦 <a href=\"{url}\">Посмотреть товар</a>\n\n"
-        f"Максимальные кэшбеки 50–100+% мы публикуем не здесь\n"
-        f"Всё — в закрытом канале\n"
-        f"Переходи по ссылке <a href=\"https://t.me/lovecwbbot?start\">@lovecwbbot</a>"
+        f"🔥 <b>Горячий кэшбэк</b>\n\n"
+        f"🟠 <b>{name}</b>\n\n"
+        f"⭐ {rating} | 📝 {fbc_cnt} отзывов\n"
+        f"❌ Обычная цена: {basic_price}₽\n" 
+        f"✅ Цена со скидкой: {price}₽\n"
+        f"💸 <b>Рубли за отзыв:</b> {cashback}₽\n\n"
+        f"🛍 <a href=\"{url}\"> Купить на Wildberries</a>\n\n"
+
     )
 
 
@@ -198,3 +201,10 @@ class FreePublishService:
 
         logger.info(f"📊 Опубликовано за запуск: {total}")
 
+async def run():
+    await init_database()
+    service = FreePublishService(bot)
+    await service.run()
+
+if __name__ == '__main__':
+    asyncio.run(run())

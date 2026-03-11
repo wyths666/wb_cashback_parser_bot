@@ -12,22 +12,6 @@ services:
       timeout: 5s
       retries: 5
 
-  bot:
-    build:
-      context: .
-      dockerfile: service.dockerfile
-    command: python -u bot.py
-    restart: unless-stopped
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017/wb_parser_bot
-    volumes:
-      - ./logs:/app/logs
-
   parser:
     build:
       context: .

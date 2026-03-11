@@ -186,14 +186,11 @@ async def run_photo_parser():
 
         service = PhotoParserService(
             context=context,
-            daily_limit=2000,
-            concurrency=3,
+            daily_limit=20000,
+            concurrency=60,
         )
 
         await service.run()
         await browser.close()
 
 
-if __name__ == "__main__":
-
-    asyncio.run(run_photo_parser())

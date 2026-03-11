@@ -2,15 +2,19 @@ import math
 from datetime import datetime, timezone, UTC
 from playwright.async_api import async_playwright
 from core.logger import parser_logger
+from core.mongo import init_database
 from mongo_db.models import WBProductRaw
 import asyncio
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import hashlib
 import json
+from parser.free_links import free_pars_links
 from parser.links import pars_links
+from parser.wb_session import WBSession
 
 logger = parser_logger
 
+CONCURRENCY = 3
 
 def calc_data_hash(data: dict) -> str:
     relevant = {
@@ -23,7 +27,6 @@ def calc_data_hash(data: dict) -> str:
 
     raw = json.dumps(relevant, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(raw.encode()).hexdigest()
-
 
 
 
@@ -44,73 +47,80 @@ def set_page(url: str, page: int) -> str:
         parsed.fragment,
     ))
 
-async def fetch_catalog_page(context, base_url, page, max_retries=5):
+
+async def fetch_catalog_page(request, base_url, page, max_retries=5):
+
     url = set_page(base_url, page)
 
     for attempt in range(max_retries):
+
         try:
-            response = await context.request.get(url, timeout=30_000)
+            response = await request.get(url, timeout=30_000)
 
             if response.status == 200:
-                try:
-                    return await response.json()
-                except Exception as e:
-                    logger.exception(f"❌ Ошибка парсинга JSON - {str(e)}")
-                    return None
+                return await response.json()
 
-            logger.warning(
-                f"⚠️ HTTP {response.status} | attempt {attempt+1}/{max_retries}"
-            )
+        except Exception:
+            logger.exception("WB request error")
 
-        except Exception as e:
-            logger.exception(
-                f"❌ Ошибка запроса | attempt {attempt+1}/{max_retries} - {str(e)}"
-            )
-
-        await asyncio.sleep(2 + attempt)
+        await asyncio.sleep(2)
 
     return None
 
+from pymongo import UpdateOne
 
-async def save_products(products: list, category_id: int):
+
+async def save_products(products: list, category_id: str):
+
     now = datetime.now(timezone.utc)
 
-    inserted = 0
-    updated = 0
+    operations = []
 
     for p in products:
-        try:
-            nm_id = p.get("id")
-            if not nm_id:
-                continue
 
-            existing = await WBProductRaw.find_one(
-                WBProductRaw.nm_id == nm_id
+        nm_id = p.get("id")
+        if not nm_id:
+            continue
+
+        doc = {
+            "nm_id": nm_id,
+            "data": p,
+            "data_hash": calc_data_hash(p),
+            "category_id": category_id,
+            "fetched_at": now,
+        }
+
+        operations.append(
+            UpdateOne(
+                {"nm_id": nm_id},
+                {"$set": doc},
+                upsert=True
             )
+        )
 
-            doc = {
-                "nm_id": nm_id,
-                "data": p,
-                "data_hash": calc_data_hash(p),
-                "category_id": category_id,
-                "fetched_at": now,
-            }
+    if not operations:
+        return 0
 
-            if existing:
-                await existing.set(doc)
-                updated += 1
-            else:
-                await WBProductRaw(**doc).insert()
-                inserted += 1
+    result = await WBProductRaw.get_motor_collection().bulk_write(
+        operations,
+        ordered=False
+    )
 
-        except Exception:
-            logger.exception(f"❌ Ошибка сохранения nm_id={p.get('id')}")
+    inserted = result.upserted_count
+    updated = result.modified_count
 
-    logger.info(f"DB: +{inserted} новых")
+    logger.info(
+        f"DB: +{inserted} новых | обновлено {updated}"
+    )
+
+    return inserted
 
 
 async def run_playwright_parser(api_url, category_id):
     browser = None
+
+    MAX_NEW_PRODUCTS = 100
+    new_products = 0
 
     try:
         async with async_playwright() as p:
@@ -138,11 +148,11 @@ async def run_playwright_parser(api_url, category_id):
             await page.goto("https://www.wildberries.ru/", timeout=60_000)
             await asyncio.sleep(3)
 
-            total_pages = None
             page_num = 1
 
             while True:
-                logger.info(f"📄 Загружаем page={page_num} из {total_pages}")
+
+                logger.info(f"📄 Загружаем page={page_num}")
 
                 data = await fetch_catalog_page(context, api_url, page_num)
                 if not data:
@@ -152,14 +162,18 @@ async def run_playwright_parser(api_url, category_id):
                 if not products:
                     break
 
-                await save_products(products, category_id)
+                inserted = await save_products(products, category_id)
 
-                if total_pages is None:
-                    total = data.get("total", 0)
-                    page_size = len(products)
-                    total_pages = math.ceil(total / page_size)
+                new_products += inserted
 
-                if page_num >= total_pages:
+                logger.info(
+                    f"📦 Новых товаров: {inserted} | всего собрано: {new_products}"
+                )
+
+                if new_products >= MAX_NEW_PRODUCTS:
+                    logger.info(
+                        f"⛔ Достигнут лимит новых товаров: {MAX_NEW_PRODUCTS}"
+                    )
                     break
 
                 page_num += 1
@@ -175,36 +189,130 @@ async def run_playwright_parser(api_url, category_id):
             except Exception:
                 logger.exception("❌ Ошибка при закрытии браузера")
 
+async def parse_single_url(session, url, category_id):
 
+    MAX_NEW_PRODUCTS = 100
+    new_products = 0
+    page_num = 1
+
+    while True:
+
+        logger.info(f"📄 {category_id} page={page_num}")
+
+        data = await fetch_catalog_page(
+            session.request,
+            url,
+            page_num
+        )
+
+        if not data:
+            break
+
+        products = data.get("products", [])
+        if not products:
+            break
+
+        inserted = await save_products(products, category_id)
+
+        new_products += inserted
+
+        if new_products >= MAX_NEW_PRODUCTS:
+            logger.info(
+                f"⛔ {category_id} достигнут лимит {MAX_NEW_PRODUCTS}"
+            )
+            break
+
+        page_num += 1
+        await asyncio.sleep(1.5)
 
 async def run_raw_parser():
-    try:
-        total = 0
 
-        for category_id, urls in pars_links.items():
-            logger.info(
-                f"📦 Старт парсинга категории: {category_id} "
-                f"(urls={len(urls)})"
-            )
+    session = WBSession()
+    await session.start()
 
-            for url in urls:
+    semaphore = asyncio.Semaphore(3)
+
+    async def worker(url, category_id):
+
+        async with semaphore:
+            try:
                 logger.info(
                     f"🔗 Парсинг {category_id}: {url}"
                 )
 
-                await run_playwright_parser(url, category_id)
-                total += 1
+                await parse_single_url(
+                    session,
+                    url,
+                    category_id
+                )
 
-                await asyncio.sleep(10)  # антибан
+            except Exception:
+                logger.exception("❌ Ошибка парсинга")
 
-        logger.info(f"✅ Парсинг завершён, всего запусков: {total}")
+    tasks = []
 
-    except Exception:
-        logger.exception("🔥 Критическая ошибка парсера товаров")
+    for category_id, urls in pars_links.items():
+
+        logger.info(
+            f"📦 Категория {category_id} | ссылок: {len(urls)}"
+        )
+
+        for url in urls:
+            tasks.append(
+                asyncio.create_task(
+                    worker(url, category_id)
+                )
+            )
+
+    await asyncio.gather(*tasks)
+
+    await session.close()
+
+    logger.info("✅ Парсинг завершён")
 
 
+async def run_free_parser():
 
+    session = WBSession()
+    await session.start()
 
+    semaphore = asyncio.Semaphore(3)
 
+    async def worker(url, category_id):
 
+        async with semaphore:
+            try:
+                logger.info(
+                    f"🔗 Парсинг {category_id}: {url}"
+                )
+
+                await parse_single_url(
+                    session,
+                    url,
+                    category_id
+                )
+
+            except Exception:
+                logger.exception("❌ Ошибка парсинга")
+
+    tasks = []
+
+    for category_id, urls in free_pars_links.items():
+
+        logger.info(
+            f"📦 Категория {category_id} | ссылок: {len(urls)}"
+        )
+
+        for url in urls:
+            tasks.append(
+                asyncio.create_task(
+                    worker(url, category_id)
+                )
+            )
+
+    await asyncio.gather(*tasks)
+
+    await session.close()
+
+    logger.info("✅ Парсинг завершён")
 

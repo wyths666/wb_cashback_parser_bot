@@ -1,5 +1,6 @@
 import asyncio
 import random
+from datetime import datetime, timedelta, UTC
 from typing import List, Dict, Iterable, Tuple
 from enum import Enum
 from playwright.async_api import async_playwright
@@ -10,7 +11,7 @@ from mongo_db.models import WBProductFiltered
 logger = parser_logger
 
 URL = "https://www.wildberries.ru/__internal/card/cards/v4/detail?appType=1&curr=rub&dest=-1257484&spp=30&hide_vflags=4294967296&hide_dtype=9&ab_testing=false&lang=ru"
-CONCURRENCY = 30
+CONCURRENCY = 2
 DELAY_MIN = 2.5   # сек
 DELAY_MAX = 4.5   # сек
 
@@ -22,7 +23,7 @@ async def init_wb_session(context):
         timeout=15000
     ):
         await page.goto("https://www.wildberries.ru", wait_until="networkidle")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
     # небольшая страховка
     await page.wait_for_timeout(2000)
@@ -126,12 +127,14 @@ class NmOnly(BaseModel):
     nm_id: int
 
 async def get_nm_ids():
+    since = datetime.now(UTC) - timedelta(hours=48)
+
     docs = await WBProductFiltered.find(
-        WBProductFiltered.published == True
+        WBProductFiltered.published == True,
+        WBProductFiltered.published_at >= since,
     ).project(NmOnly).to_list()
 
-    nm_ids = [doc.nm_id for doc in docs]
-    return nm_ids
+    return [doc.nm_id for doc in docs]
 
 async def get_nm_ids_unpublished():
     docs = await WBProductFiltered.find(
@@ -153,7 +156,7 @@ async def get_nm_ids_to_delete_unpublished():
 
 async def entrypoint():
     await init_database()
-    nm_ids = await get_nm_ids()
+    nm_ids = await get_nm_ids_unpublished()
 
     results, blocked, unknown = await main(nm_ids)
 
